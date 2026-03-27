@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Meu Financeiro App</title>
+    
+    <!-- Bibliotecas PDF (CDN estável) -->
+    <script src="https://cdnjs.cloudflare.com"></script>
+    <script src="https://cdnjs.cloudflare.com"></script>
+
+    <style>
+        :root { --primary: #1a73e8; --success: #28a745; --danger: #dc3545; --bg: #f0f2f5; }
+        
+        body { font-family: 'Segoe UI', Roboto, sans-serif; padding: 10px; background: var(--bg); margin: 0; color: #333; }
+        
+        /* Card de Lançamento */
+        .card { background: white; padding: 15px; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); max-width: 600px; margin: 0 auto 15px; }
+        h2 { margin: 0 0 15px; font-size: 1.2rem; text-align: center; color: var(--primary); }
+        
+        input, select { width: 100%; padding: 12px; margin: 5px 0 10px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; } /* 16px evita zoom automático no iPhone */
+        
+        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+        button { padding: 14px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; transition: 0.2s; }
+        .btn-add { background: var(--success); color: white; grid-column: span 2; }
+        .btn-pdf { background: var(--danger); color: white; }
+        .btn-backup { background: var(--primary); color: white; }
+
+        /* Filtros */
+        .filtros { display: flex; gap: 8px; max-width: 600px; margin: 0 auto 15px; overflow-x: auto; padding-bottom: 5px; }
+        .filtros select, .filtros input { margin: 0; min-width: 80px; }
+
+        /* TABELA RESPONSIVA (Vira Cards no Celular) */
+        table { width: 100%; max-width: 600px; margin: 0 auto; border-collapse: collapse; }
+        thead { display: none; } /* Esconde o cabeçalho no mobile */
+        
+        tbody tr { 
+            display: block; 
+            background: white; 
+            margin-bottom: 12px; 
+            padding: 15px; 
+            border-radius: 12px; 
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+            position: relative;
+        }
+
+        tbody td { 
+            display: flex; 
+            justify-content: space-between; 
+            padding: 5px 0; 
+            border: none; 
+            font-size: 14px;
+        }
+
+        /* Identificadores visuais nos cards */
+        tbody td::before { content: attr(data-label); font-weight: bold; color: #666; }
+        
+        tbody td:first-child { font-size: 16px; font-weight: bold; color: var(--primary); border-bottom: 1px solid #eee; margin-bottom: 8px; padding-bottom: 8px; }
+        tbody td:first-child::before { content: ""; } /* Remove "Descrição" do título do card */
+
+        /* Estilos de Status */
+        .status-select { width: auto; height: 30px; padding: 0 5px; font-size: 12px; margin: 0; }
+        .linha-pago { border-left: 5px solid var(--success); }
+        .linha-pendente { border-left: 5px solid var(--danger); }
+
+        /* Resumo Fixo no Rodapé */
+        .resumo-fixed { 
+            position: sticky; bottom: 0; background: white; 
+            display: grid; grid-template-columns: repeat(3, 1fr); 
+            gap: 5px; padding: 10px; margin-top: 20px;
+            border-radius: 15px 15px 0 0; box-shadow: 0 -4px 10px rgba(0,0,0,0.1);
+        }
+        .resumo-fixed .box { text-align: center; font-size: 11px; font-weight: bold; padding: 5px; border-radius: 8px; color: white; }
+        .box span { display: block; font-size: 13px; margin-top: 2px; }
+        .bg-total { background: var(--primary); }
+        .bg-pago { background: var(--success); }
+        .bg-pendente { background: var(--danger); }
+
+        /* Ajuste para Desktop */
+        @media (min-width: 600px) {
+            thead { display: table-header-group; }
+            tbody tr { display: table-row; box-shadow: none; border-radius: 0; }
+            tbody td { display: table-cell; padding: 12px; border-bottom: 1px solid #eee; }
+            tbody td::before { display: none; }
+            .resumo-fixed { position: static; grid-template-columns: repeat(3, 1fr); border-radius: 15px; margin: 20px auto; max-width: 600px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>🚀 Lançar Conta</h2>
+    <input type="text" id="desc" placeholder="Descrição (ex: Internet)">
+    <div style="display: flex; gap: 8px;">
+        <input type="number" id="total" placeholder="Valor Total">
+        <input type="number" id="parcelas" placeholder="Parc.">
+    </div>
+    <input type="date" id="data">
+    <select id="statusInicial">
+        <option value="Pendente">Pendente</option>
+        <option value="Pago">Pago</option>
+        <option value="Negociação">Negociação</option>
+    </select>
+    <div class="btn-group">
+        <button class="btn-add" onclick="adicionarContas()">Adicionar Conta</button>
+        <button class="btn-pdf" onclick="exportarPDF()">Gerar PDF</button>
+        <button class="btn-backup" onclick="fazerBackup()">Backup</button>
+    </div>
+</div>
+
+<div class="filtros">
+    <select id="filtroMes" onchange="renderizarTabela()">
+        <option value="01">Jan</option><option value="02">Fev</option><option value="03">Mar</option>
+        <option value="04">Abr</option><option value="05">Mai</option><option value="06">Jun</option>
+        <option value="07">Jul</option><option value="08">Ago</option><option value="09">Set</option>
+        <option value="10">Out</option><option value="11">Nov</option><option value="12">Dez</option>
+    </select>
+    <input type="number" id="filtroAno" value="2026" onchange="renderizarTabela()">
+    <input type="text" id="buscaNome" placeholder="Buscar..." onkeyup="renderizarTabela()">
+</div>
+
+<table id="tabelaContas">
+    <thead>
+        <tr>
+            <th>Descrição</th>
+            <th>Parc.</th>
+            <th>Venc.</th>
+            <th>Status</th>
+            <th>Valor</th>
+            <th>Ação</th>
+        </tr>
+    </thead>
+    <tbody id="corpoTabela"></tbody>
+</table>
+
+<div class="resumo-fixed">
+    <div class="box bg-total">TOTAL<br><span id="resTotal">R$ 0,00</span></div>
+    <div class="box bg-pago">PAGO<br><span id="resPago">R$ 0,00</span></div>
+    <div class="box bg-pendente">PENDENTE<br><span id="resPendente">R$ 0,00</span></div>
+</div>
+
+<script>
+    let todasAsContas = JSON.parse(localStorage.getItem('contasCasa')) || [];
+    const d = new Date();
+    document.getElementById('filtroMes').value = String(d.getMonth() + 1).padStart(2, '0');
+    document.getElementById('filtroAno').value = d.getFullYear();
+
+    renderizarTabela();
+
+    function adicionarContas() {
+        const desc = document.getElementById('desc').value;
+        const total = parseFloat(document.getElementById('total').value);
+        const qtd = parseInt(document.getElementById('parcelas').value) || 1;
+        const dataIn = document.getElementById('data').value;
+        const status = document.getElementById('statusInicial').value;
+
+        if(!desc || isNaN(total) || !dataIn) return alert("Preencha os campos!");
+
+        const dataInicial = new Date(dataIn + 'T00:00:00');
+        const valorParcela = total / qtd;
+
+        for (let i = 0; i < qtd; i++) {
+            let dataVenc = new Date(dataInicial);
+            dataVenc.setMonth(dataInicial.getMonth() + i);
+            todasAsContas.push({
+                id: Date.now() + Math.random(),
+                desc: desc,
+                parcela: `${i + 1}/${qtd}`,
+                vencimento: dataVenc.toLocaleDateString('pt-BR'),
+                status: status,
+                valor: valorParcela
+            });
+        }
+        document.getElementById('desc').value = "";
+        document.getElementById('total').value = "";
+        salvarERenderizar();
+    }
+
+    function alterarStatus(id, novoStatus) {
+        const idx = todasAsContas.findIndex(c => c.id === id);
+        if (idx !== -1) {
+            todasAsContas[idx].status = novoStatus;
+            salvarERenderizar();
+        }
+    }
+
+    function apagarLinha(id) {
+        if(confirm("Remover?")) {
+            todasAsContas = todasAsContas.filter(c => c.id !== id);
+            salvarERenderizar();
+        }
+    }
+
+    function salvarERenderizar() {
+        localStorage.setItem('contasCasa', JSON.stringify(todasAsContas));
+        renderizarTabela();
+    }
+
+    function renderizarTabela() {
+        const corpo = document.getElementById('corpoTabela');
+        const mSel = document.getElementById('filtroMes').value;
+        const aSel = document.getElementById('filtroAno').value;
+        const busca = document.getElementById('buscaNome').value.toLowerCase();
+        
+        let sT = 0, sPa = 0, sPe = 0;
+
+        const filtradas = todasAsContas.filter(c => {
+            const [dia, mes, ano] = c.vencimento.split('/');
+            return mes === mSel && ano === aSel && c.desc.toLowerCase().includes(busca);
+        });
+
+        corpo.innerHTML = filtradas.map(c => {
+            sT += c.valor;
+            if(c.status === 'Pago') sPa += c.valor; else sPe += c.valor;
+            return `<tr class="${c.status === 'Pago' ? 'linha-pago' : 'linha-pendente'}">
+                <td data-label="Descrição">${c.desc}</td>
+                <td data-label="Parcela">${c.parcela}</td>
+                <td data-label="Vencimento">${c.vencimento}</td>
+                <td data-label="Status">
+                    <select class="status-select" onchange="alterarStatus(${c.id}, this.value)">
+                        <option value="Pendente" ${c.status === 'Pendente' ? 'selected' : ''}>Pendente</option>
+                        <option value="Pago" ${c.status === 'Pago' ? 'selected' : ''}>Pago</option>
+                        <option value="Negociação" ${c.status === 'Negociação' ? 'selected' : ''}>Negociação</option>
+                    </select>
+                </td>
+                <td data-label="Valor">R$ ${c.valor.toFixed(2)}</td>
+                <td data-label="Ação"><button class="btn-del" onclick="apagarLinha(${c.id})">Apagar</button></td>
+            </tr>`;
+        }).join('');
+
+        document.getElementById('resTotal').innerText = sT.toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+        document.getElementById('resPago').innerText = sPa.toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+        document.getElementById('resPendente').innerText = sPe.toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+    }
+
+    function exportarPDF() {
+        try {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const mesNome = document.getElementById('filtroMes').options[document.getElementById('filtroMes').selectedIndex].text;
+            const anoVal = document.getElementById('filtroAno').value;
+            const dadosPdf = todasAsContas.filter(c => {
+                const [d, m, a] = c.vencimento.split('/');
+                return m === document.getElementById('filtroMes').value && a === anoVal;
+            });
+            if(dadosPdf.length === 0) return alert("Nada para exportar.");
+            doc.text(`Financeiro: ${mesNome}/${anoVal}`, 14, 15);
+            doc.autoTable({
+                startY: 20,
+                head: [['Descrição', 'Parc.', 'Venc.', 'Status', 'Valor']],
+                body: dadosPdf.map(c => [c.desc, c.parcela, c.vencimento, c.status, `R$ ${c.valor.toFixed(2)}`]),
+            });
+            doc.save(`Financeiro_${mesNome}.pdf`);
+        } catch (e) { alert("Erro ao gerar PDF."); }
+    }
+
+    function fazerBackup() {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(todasAsContas));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", "backup_financeiro.json");
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+    }
+</script>
+
+</body>
+</html>
